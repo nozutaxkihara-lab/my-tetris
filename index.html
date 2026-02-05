@@ -3,14 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>シンプル・テトリス</title>
+    <title>テトリス - 一時停止＆ガイド付</title>
     <style>
-        /* CSS: 見た目の設定 */
         body {
             background: #202028;
             color: #fff;
-            font-family: sans-serif;
-            font-size: 2em;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             text-align: center;
             margin: 0;
             overflow: hidden;
@@ -21,50 +19,79 @@
             height: 100vh;
         }
 
+        #score {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
         #game-container {
             position: relative;
-            border: 2px solid #fff;
+            border: 4px solid #fff;
             background-color: #000;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            box-shadow: 0 0 30px rgba(0,0,0,0.5);
         }
 
         canvas {
             display: block;
-            height: 85vh; /* 画面の高さに合わせる */
+            height: 80vh;
         }
 
-        #score {
-            margin-bottom: 10px;
-            font-weight: bold;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        /* 一時停止時のオーバーレイ */
+        #pause-overlay {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 1.5em;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
         }
 
         .controls-hint {
-            font-size: 0.4em;
+            font-size: 0.9rem;
             color: #aaa;
-            margin-top: 10px;
+            margin-top: 15px;
+            line-height: 1.4;
+        }
+
+        kbd {
+            background-color: #444;
+            border-radius: 3px;
+            padding: 2px 6px;
+            color: #eee;
         }
     </style>
 </head>
 <body>
 
     <div id="score">SCORE: 0</div>
+    
     <div id="game-container">
+        <div id="pause-overlay">PAUSED</div>
         <canvas id="tetris" width="240" height="400"></canvas>
     </div>
-    <div class="controls-hint">矢印キー：移動・回転 / 下：加速</div>
+
+    <div class="controls-hint">
+        移動: <kbd>←</kbd><kbd>→</kbd> / 回転: <kbd>↑</kbd> / 加速: <kbd>↓</kbd><br>
+        一時停止: <kbd>P</kbd> or <kbd>Esc</kbd>
+    </div>
 
     <script>
-        /* JavaScript: ゲームロジック */
-
         const canvas = document.getElementById('tetris');
         const context = canvas.getContext('2d');
         const scoreElement = document.getElementById('score');
+        const pauseOverlay = document.getElementById('pause-overlay');
 
-        // ブロックのサイズ（スケール）
         context.scale(20, 20);
 
-        // ライン消去時のスコア計算
+        // ゲームの状態
+        let paused = false;
+
         function arenaSweep() {
             let rowCount = 1;
             outer: for (let y = arena.length - 1; y > 0; --y) {
@@ -73,18 +100,15 @@
                         continue outer;
                     }
                 }
-                // 一列揃った場合
                 const row = arena.splice(y, 1)[0].fill(0);
                 arena.unshift(row);
                 ++y;
-
                 player.score += rowCount * 10;
                 rowCount *= 2;
             }
             updateScore();
         }
 
-        // 衝突判定
         function collide(arena, player) {
             const [m, o] = [player.matrix, player.pos];
             for (let y = 0; y < m.length; ++y) {
@@ -98,7 +122,6 @@
             return false;
         }
 
-        // 行列（盤面）の作成
         function createMatrix(w, h) {
             const matrix = [];
             while (h--) {
@@ -107,7 +130,6 @@
             return matrix;
         }
 
-        // テトリミノの形状定義
         function createPiece(type) {
             if (type === 'I') {
                 return [
@@ -117,72 +139,69 @@
                     [0, 1, 0, 0],
                 ];
             } else if (type === 'L') {
-                return [
-                    [0, 2, 0],
-                    [0, 2, 0],
-                    [0, 2, 2],
-                ];
+                return [[0, 2, 0], [0, 2, 0], [0, 2, 2]];
             } else if (type === 'J') {
-                return [
-                    [0, 3, 0],
-                    [0, 3, 0],
-                    [3, 3, 0],
-                ];
+                return [[0, 3, 0], [0, 3, 0], [3, 3, 0]];
             } else if (type === 'O') {
-                return [
-                    [4, 4],
-                    [4, 4],
-                ];
+                return [[4, 4], [4, 4]];
             } else if (type === 'Z') {
-                return [
-                    [5, 5, 0],
-                    [0, 5, 5],
-                    [0, 0, 0],
-                ];
+                return [[5, 5, 0], [0, 5, 5], [0, 0, 0]];
             } else if (type === 'S') {
-                return [
-                    [0, 6, 6],
-                    [6, 6, 0],
-                    [0, 0, 0],
-                ];
+                return [[0, 6, 6], [6, 6, 0], [0, 0, 0]];
             } else if (type === 'T') {
-                return [
-                    [0, 7, 0],
-                    [7, 7, 7],
-                    [0, 0, 0],
-                ];
+                return [[0, 7, 0], [7, 7, 7], [0, 0, 0]];
             }
         }
 
-        // 描画処理
-        function draw() {
-            // 背景クリア
-            context.fillStyle = '#000';
-            context.fillRect(0, 0, canvas.width, canvas.height);
-
-            drawMatrix(arena, {x: 0, y: 0});
-            drawMatrix(player.matrix, player.pos);
-        }
-
-        // 指定した行列を描画
-        function drawMatrix(matrix, offset) {
+        // 行列の描画共通関数
+        function drawMatrix(matrix, offset, isGhost = false) {
             matrix.forEach((row, y) => {
                 row.forEach((value, x) => {
                     if (value !== 0) {
-                        context.fillStyle = colors[value];
-                        context.fillRect(x + offset.x,
-                                         y + offset.y,
-                                         1, 1);
-                        // 枠線を描画してブロック感を出させる
-                        context.lineWidth = 0.05;
-                        context.strokeStyle = 'white';
-                        context.strokeRect(x + offset.x, y + offset.y, 1, 1);
+                        if (isGhost) {
+                            // ゴーストブロックの描画
+                            context.fillStyle = 'rgba(255, 255, 255, 0.2)'; // 薄い白
+                            context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                            context.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                            context.lineWidth = 0.05;
+                            context.strokeRect(x + offset.x, y + offset.y, 1, 1);
+                        } else {
+                            // 通常ブロック
+                            context.fillStyle = colors[value];
+                            context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                            context.lineWidth = 0.05;
+                            context.strokeStyle = 'white';
+                            context.strokeRect(x + offset.x, y + offset.y, 1, 1);
+                        }
                     }
                 });
             });
         }
 
-        // 盤面にピースを固定
+        // 落下地点（ゴースト）の計算
+        function getGhostPosition() {
+            const ghostPos = { x: player.pos.x, y: player.pos.y };
+            while (!collide(arena, { pos: ghostPos, matrix: player.matrix })) {
+                ghostPos.y++;
+            }
+            ghostPos.y--; // 衝突した位置の1つ上が着地点
+            return ghostPos;
+        }
+
+        function draw() {
+            context.fillStyle = '#000';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+
+            drawMatrix(arena, {x: 0, y: 0});
+
+            // 落下予測位置の描画
+            const ghostPos = getGhostPosition();
+            drawMatrix(player.matrix, ghostPos, true);
+
+            // プレイヤーの描画
+            drawMatrix(player.matrix, player.pos);
+        }
+
         function merge(arena, player) {
             player.matrix.forEach((row, y) => {
                 row.forEach((value, x) => {
@@ -193,56 +212,42 @@
             });
         }
 
-        // 回転処理
         function rotate(matrix, dir) {
             for (let y = 0; y < matrix.length; ++y) {
                 for (let x = 0; x < y; ++x) {
-                    [
-                        matrix[x][y],
-                        matrix[y][x],
-                    ] = [
-                        matrix[y][x],
-                        matrix[x][y],
-                    ];
+                    [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
                 }
             }
-            if (dir > 0) {
-                matrix.forEach(row => row.reverse());
-            } else {
-                matrix.reverse();
-            }
+            if (dir > 0) matrix.forEach(row => row.reverse());
+            else matrix.reverse();
         }
 
-        // ピースを落とす
         function playerDrop() {
+            if (paused) return;
             player.pos.y++;
             if (collide(arena, player)) {
                 player.pos.y--;
                 merge(arena, player);
                 playerReset();
                 arenaSweep();
-                updateScore();
             }
             dropCounter = 0;
         }
 
-        // ピースを横に動かす
         function playerMove(dir) {
+            if (paused) return;
             player.pos.x += dir;
             if (collide(arena, player)) {
                 player.pos.x -= dir;
             }
         }
 
-        // 次のピースを出現させる
         function playerReset() {
             const pieces = 'ILJOTSZ';
             player.matrix = createPiece(pieces[pieces.length * Math.random() | 0]);
             player.pos.y = 0;
-            player.pos.x = (arena[0].length / 2 | 0) -
-                           (player.matrix[0].length / 2 | 0);
+            player.pos.x = (arena[0].length / 2 | 0) - (player.matrix[0].length / 2 | 0);
             
-            // 出現時に即衝突（ゲームオーバー）
             if (collide(arena, player)) {
                 arena.forEach(row => row.fill(0));
                 player.score = 0;
@@ -250,8 +255,8 @@
             }
         }
 
-        // プレイヤーの回転操作
         function playerRotate(dir) {
+            if (paused) return;
             const pos = player.pos.x;
             let offset = 1;
             rotate(player.matrix, dir);
@@ -266,72 +271,58 @@
             }
         }
 
-        // スコア更新
+        function togglePause() {
+            paused = !paused;
+            pauseOverlay.style.display = paused ? 'flex' : 'none';
+        }
+
         function updateScore() {
             scoreElement.innerText = `SCORE: ${player.score}`;
         }
 
-        // 色の定義
         const colors = [
-            null,
-            '#FF0D72',
-            '#0DC2FF',
-            '#0DFF72',
-            '#F538FF',
-            '#FF8E0D',
-            '#FFE138',
-            '#3877FF',
+            null, '#FF0D72', '#0DC2FF', '#0DFF72', '#F538FF', '#FF8E0D', '#FFE138', '#3877FF',
         ];
 
-        // ゲームの状態管理
         const arena = createMatrix(12, 20);
+        const player = { pos: {x: 0, y: 0}, matrix: null, score: 0 };
 
-        const player = {
-            pos: {x: 0, y: 0},
-            matrix: null,
-            score: 0,
-        };
-
-        // キー入力イベント
         document.addEventListener('keydown', event => {
-            if (event.keyCode === 37) { // 左
-                playerMove(-1);
-            } else if (event.keyCode === 39) { // 右
-                playerMove(1);
-            } else if (event.keyCode === 40) { // 下
-                playerDrop();
-            } else if (event.keyCode === 38) { // 上（回転）
-                playerRotate(1);
-            } else if (event.keyCode === 81) { // Qキー
-                playerRotate(-1);
-            } else if (event.keyCode === 87) { // Wキー
-                playerRotate(1);
+            // Pキー(80) または Escキー(27) で一時停止
+            if (event.keyCode === 80 || event.keyCode === 27) {
+                togglePause();
+            }
+
+            if (!paused) {
+                if (event.keyCode === 37) playerMove(-1);        // Left
+                else if (event.keyCode === 39) playerMove(1);     // Right
+                else if (event.keyCode === 40) playerDrop();     // Down
+                else if (event.keyCode === 38) playerRotate(1);  // Up (Rotate)
             }
         });
 
-        // メインループ
         let dropCounter = 0;
-        let dropInterval = 1000; // 1秒ごとに落下
-
+        let dropInterval = 1000;
         let lastTime = 0;
+
         function update(time = 0) {
             const deltaTime = time - lastTime;
             lastTime = time;
 
-            dropCounter += deltaTime;
-            if (dropCounter > dropInterval) {
-                playerDrop();
+            if (!paused) {
+                dropCounter += deltaTime;
+                if (dropCounter > dropInterval) {
+                    playerDrop();
+                }
             }
 
             draw();
             requestAnimationFrame(update);
         }
 
-        // 初回起動
         playerReset();
         updateScore();
         update();
-
     </script>
 </body>
 </html>
